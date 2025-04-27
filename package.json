@@ -1,0 +1,14 @@
+{
+  "name": "promptpilot-expo-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "cd promptpilot-app && npx expo start",
+    "android": "cd promptpilot-app && npx expo start --android",
+    "ios": "cd promptpilot-app && npx expo start --ios",
+    "web": "cd promptpilot-app && npx expo start --web"
+  },
+  "workspaces": [
+    "promptpilot-app"
+  ]
+}

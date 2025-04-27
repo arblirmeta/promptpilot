@@ -1,0 +1,96 @@
+## 📱 **PromptHub – Die Community für kreative KI-Prompts**
+
+**PromptHub** ist eine moderne Flutter-App, mit der Nutzer ihre besten KI-Prompts (z. B. für ChatGPT, Midjourney & Co.) veröffentlichen, entdecken, bewerten und miteinander teilen können. Die App bringt Kreative, Developer und KI-Enthusiasten auf einer Plattform zusammen und sorgt für maximale Inspiration.
+
+---
+
+## 🔑 **Hauptfunktionen von PromptHub (Stand: aktuell)**
+
+### 🔐 **Authentifizierung (Firebase Auth)**
+- Login/Registrierung via E-Mail und Passwort.
+- Benutzerprofil mit **Name**, **Profilbild** und **Kurzbeschreibung**.
+- Nach erfolgreicher Registrierung können Nutzer Prompts entdecken und posten.
+
+---
+
+### 🏠 **HomeScreen**
+- Anzeige kuratierter Inhalte oder zuletzt angesehener Prompts (optional erweiterbar).
+- Zugriff auf Hauptbereiche: Entdecken, Suche, Profil.
+
+---
+
+### 🔍 **Discover-Screen**
+- Zeigt die beliebtesten Prompts (Trending) und neue Prompts (Neueste).
+- Sortierung basiert auf Kriterien wie: `likesCount`, `createdAt`, `isPublic`.
+- Dynamische Daten aus **Firestore**, mit Live-Updates.
+
+---
+
+### 📈 **Trending- & Neueste-Prompts**
+- Realtime-Listenansicht von Prompts anderer User.
+- Prompts enthalten: Titel, Beschreibung, Tags, Autor, Zeitstempel.
+- Jeder Prompt ist klickbar und führt zur Detailansicht.
+
+---
+
+### 🧾 **Prompt Detail Screen**
+- Detaillierte Ansicht eines einzelnen Prompts.
+- Enthält:
+  - Volltext + Tags
+  - Autor-Info
+  - Kommentarbereich (inkl. Antworten)
+  - **Sternebewertung (NEU): Andere Nutzer können Prompts bewerten** ⭐⭐⭐⭐⭐
+- Kommentarfunktion inkl. Bearbeiten/Löschen eigener Kommentare und Antworten auf andere.
+
+---
+
+### 💬 **Kommentarfunktion**
+- Jeder Prompt kann kommentiert und diskutiert werden.
+- Kommentare und Antworten werden gestreamt aus Firestore.
+- Nutzer können eigene Kommentare bearbeiten oder löschen.
+- Antworten auf andere Kommentare möglich (Threaded Comments).
+
+---
+
+### 🌟 **Sternebewertung (NEU)**
+- Jeder Nutzer kann **Prompts von anderen mit 1–5 Sternen** bewerten.
+- Jeder Prompt zeigt eine **durchschnittliche Bewertung** und **Anzahl an Bewertungen**.
+- Bewertungen sind eindeutig pro Nutzer/Prompt (nur einmal bewertbar, aber aktualisierbar).
+- Struktur: `ratings` Collection in Firestore mit Feldern: `promptId`, `userId`, `ratingValue`.
+
+---
+
+### 🧑‍💻 **Benutzerprofile**
+- Jeder Nutzer hat ein eigenes Profil mit:
+  - Profilbild
+  - Nutzername
+  - Kurz-Bio
+  - Anzahl veröffentlichter Prompts
+- Profile anderer User sind öffentlich einsehbar.
+
+---
+
+### ➕ **Prompt erstellen**
+- Jeder eingeloggte User kann neue Prompts posten.
+- Eingabe: Titel, Beschreibung, Tags (mehrere), Sichtbarkeit (öffentlich/privat).
+- Speichern in Firestore + sofortige Anzeige in der App.
+
+---
+
+### 🔐 **Datenstruktur in Firestore**
+- `users`: Benutzerprofile
+- `prompts`: KI-Prompts (öffentlich/privat)
+- `comments`: Kommentare zu Prompts
+- `ratings`: Sternebewertungen zu Prompts
+- `likes`: Like-Verwaltung (optional implementiert)
+- (später möglich: `followers`, `collections`, `reports`)
+
+---
+
+### 🛠️ **Zusätzliche Features / Tools**
+- Firebase Storage für Profilbilder.
+- Error-Handling mit **klickbaren Links** für fehlende Firestore-Indexes.
+- Modernes UI mit `Material 3`, Responsive Design und `StreamBuilder`.
+
+---
+
