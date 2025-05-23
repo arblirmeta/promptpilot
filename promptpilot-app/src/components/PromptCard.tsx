@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text as RNText } from 'react-native'; // Renamed Text to RNText to avoid conflict if any, though Text from react-native-paper is used for tags
 import { Text } from 'react-native-paper';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import ProfileAvatar from './ProfileAvatar';
@@ -57,6 +58,13 @@ const PromptCard: React.FC<PromptCardProps> = ({
   onPress,
 }) => {
   const { theme, isDark } = useTheme();
+  const navigation = useNavigation();
+  
+  const handleTagPress = (tag: string) => {
+    // @ts-ignore - Assuming 'Search' is the name of the navigator/screen and can take params
+    // Adjust 'Search' to the actual route name for SearchScreen if different.
+    navigation.navigate('Search', { query: tag }); 
+  };
   
   // Verwende den besten verfügbaren Inhalt: text, content oder description
   const bestContent = text || content || description || '';
@@ -185,25 +193,30 @@ const PromptCard: React.FC<PromptCardProps> = ({
       {/* Tags */}
       <View style={styles.tagsContainer}>
         {Array.isArray(tags) && tags.slice(0, 3).map((tag, index) => (
-          <View 
-            key={index} 
-            style={[
-              styles.tag, 
-              { 
-                backgroundColor: theme.colors.primary + '15',
-                borderColor: theme.colors.primary + '30',
-              }
-            ]}
+          <TouchableOpacity
+            key={index}
+            onPress={() => handleTagPress(tag)}
+            // Apply styling for the touchable area if needed, for now, the View inside will dictate size
           >
-            <Text style={[styles.tagText, { color: theme.colors.primary }]}>
-              {tag}
-            </Text>
-          </View>
+            <View 
+              style={[
+                styles.tag, 
+                { 
+                  backgroundColor: theme.colors.primary + '15',
+                  borderColor: theme.colors.primary + '30',
+                }
+              ]}
+            >
+              <Text style={[styles.tagText, { color: theme.colors.primary }]}>
+                {tag}
+              </Text>
+            </View>
+          </TouchableOpacity>
         ))}
         {Array.isArray(tags) && tags.length > 3 && (
-          <Text style={[styles.moreTag, { color: theme.colors.subtext }]}>
+          <RNText style={[styles.moreTag, { color: theme.colors.subtext }]}>
             +{tags.length - 3}
-          </Text>
+          </RNText>
         )}
       </View>
       
