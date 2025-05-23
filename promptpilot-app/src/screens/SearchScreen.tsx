@@ -1,9 +1,9 @@
 import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl, Text, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { PerformanceMonitor, CacheManager, debounce } from '../utils/PerformanceOptimizer';
-import { firestore, collection, getDocs, query as firestoreQuery, where, orderBy, limit as firestoreLimit, type QueryDocumentSnapshot, type DocumentData } from '../config/firebase';
+import { firestore, collection, getDocs, query as firestoreQuery, where, orderBy, limit as firestoreLimit, type QuerySnapshot, type DocumentData } from '../config/firebase';
 import { Prompt, PromptData, convertToPrompt } from '../models/Prompt';
 import PromptCard from '../components/PromptCard';
 import EmptyState from '../components/EmptyState';
@@ -11,10 +11,29 @@ import Input from '../components/Input';
 import Button from '../components/Button';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+// Define a type for the expected route params
+type SearchScreenRouteParams = {
+  query?: string;
+};
+
+const SORT_OPTIONS = [
+  { label: 'Relevance', field: null, direction: null },
+  { label: 'Newest', field: 'createdAt', direction: 'desc' },
+  { label: 'Oldest', field: 'createdAt', direction: 'asc' },
+  { label: 'Most Liked', field: 'likesCount', direction: 'desc' },
+  { label: 'Most Viewed', field: 'viewsCount', direction: 'desc' },
+  { label: 'Highest Rated', field: 'averageRating', direction: 'desc' },
+] as const; // Use 'as const' for better type inference if needed, or define a specific type
+
+// Define a type for a single sort option for clarity
+type SortOption = typeof SORT_OPTIONS[number];
+
 const SearchScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
   const navigation = useNavigation();
+  const route = useRoute<RouteProp<{ params: SearchScreenRouteParams }, string>>();
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentSort, setCurrentSort] = useState<SortOption>(SORT_OPTIONS[0]);
   const [searchResults, setSearchResults] = useState<Prompt[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -43,86 +62,118 @@ const SearchScreen: React.FC = () => {
         setSearchResults([]);
         return;
       }
-      
+
       performanceMonitor.startMeasure('searchPrompts');
       setIsLoading(true);
       setError(null);
-      
+
       try {
-        // Versuche, Ergebnisse aus dem Cache zu laden
-        const cacheKey = `search_${query.toLowerCase()}`;
+        const cacheKey = `search_${query.toLowerCase()}_sort_${currentSort.field}_${currentSort.direction}`;
         const cachedResults = cache.get<Prompt[]>(cacheKey);
-        
+
         if (cachedResults) {
           setSearchResults(cachedResults);
           setIsLoading(false);
+          performanceMonitor.endMeasure('searchPrompts');
           return;
         }
-        
-        // Einfachere Suchstrategie, die mit der bestehenden Datenbank funktioniert
+
         const queryLower = query.toLowerCase();
         const promptsRef = collection(firestore, 'prompts');
-        
-        console.log('Suche nach:', queryLower);
-        
-        // Hole alle Prompts und filtere clientseitig
-        // (Dies ist eine temporäre Lösung, bis entsprechende Indizes erstellt sind)
-        const promptsQuery = firestoreQuery(
-          promptsRef, 
-          firestoreLimit(50) // Erhöhtes Limit für bessere Suchergebnisse
+        console.log('Serversuche nach:', queryLower, 'Sortierung:', currentSort.label);
+
+        // Base queries
+        let tagsBaseQuery = firestoreQuery(
+          promptsRef,
+          where('tags', 'array-contains', queryLower)
         );
+        let categoryBaseQuery = firestoreQuery(
+          promptsRef,
+          where('category', '==', queryLower)
+        );
+        let titleBaseQuery = firestoreQuery(
+          promptsRef,
+          where('title', '>=', queryLower),
+          where('title', '<=', queryLower + '\uf8ff')
+        );
+
+        // Apply sorting if a sort field is specified
+        if (currentSort.field && currentSort.direction) {
+          tagsBaseQuery = firestoreQuery(tagsBaseQuery, orderBy(currentSort.field, currentSort.direction));
+          categoryBaseQuery = firestoreQuery(categoryBaseQuery, orderBy(currentSort.field, currentSort.direction));
+          titleBaseQuery = firestoreQuery(titleBaseQuery, orderBy(currentSort.field, currentSort.direction));
+        }
+
+        // Apply limit after sorting
+        const tagsFinalQuery = firestoreQuery(tagsBaseQuery, firestoreLimit(15));
+        const categoryFinalQuery = firestoreQuery(categoryBaseQuery, firestoreLimit(15));
+        const titleFinalQuery = firestoreQuery(titleBaseQuery, firestoreLimit(15));
         
-        const snapshot = await getDocs(promptsQuery);
-        console.log('Gefundene Prompts:', snapshot.docs.length);
+        const [tagsSnapshot, categorySnapshot, titleSnapshot] = await Promise.all([
+          getDocs(tagsFinalQuery),
+          getDocs(categoryFinalQuery),
+          getDocs(titleFinalQuery),
+        ]);
+
+        const fetchedPrompts: Prompt[] = [];
+        const promptIds = new Set<string>();
+
+        // Helper function to process each snapshot and add unique prompts
+        const processSnapshot = (snapshot: QuerySnapshot<DocumentData>) => {
+          snapshot.docs.forEach(doc => {
+            const prompt = convertToPrompt({ ...(doc.data() as PromptData), id: doc.id });
+            if (prompt.id && !promptIds.has(prompt.id)) { // Ensure prompt.id is not null and is unique
+              fetchedPrompts.push(prompt);
+              promptIds.add(prompt.id);
+            }
+          });
+        };
+
+        processSnapshot(tagsSnapshot);
+        processSnapshot(categorySnapshot);
+        processSnapshot(titleSnapshot);
         
-        // Clientseitige Filterung nach Titel, Inhalt oder Tags
-        const results: Prompt[] = [];
+        console.log('Gefilterte Ergebnisse (Server):', fetchedPrompts.length);
         
-        snapshot.docs.forEach(doc => {
-          const data = doc.data() as PromptData;
-          const prompt = convertToPrompt({ ...data, id: doc.id });
-          
-          // Prüfe, ob der Suchbegriff im Titel, Inhalt oder Tags vorkommt
-          const title = prompt.title?.toLowerCase() || '';
-          const content = prompt.content?.toLowerCase() || '';
-          const category = prompt.category?.toLowerCase() || '';
-          const tags = prompt.tags?.map(tag => tag.toLowerCase()) || [];
-          
-          if (
-            title.includes(queryLower) || 
-            content.includes(queryLower) || 
-            category.includes(queryLower) ||
-            tags.some(tag => tag.includes(queryLower))
-          ) {
-            results.push(prompt);
-          }
-        });
-        
-        console.log('Gefilterte Ergebnisse:', results.length);
-        
-        // Speichere die Ergebnisse im Cache
-        cache.set(cacheKey, results, 5); // 5 Minuten Cache-Dauer
-        
-        // Speichere den Suchbegriff
-        saveSearchQuery(query);
-        
-        setSearchResults(results);
-      } catch (error) {
+        cache.set(cacheKey, fetchedPrompts, 5); // 5 Minuten Cache-Dauer
+        saveSearchQuery(query); // Save search query after successful search
+        setSearchResults(fetchedPrompts);
+
+      } catch (error: any) { 
         console.error('Fehler bei der Suche:', error);
-        setError('Bei der Suche ist ein Fehler aufgetreten. Bitte versuche es später erneut.');
+        if (error.code && error.code === 'failed-precondition') {
+             setError('Die Suche erfordert möglicherweise einen Index. Bitte kontaktieren Sie den Support oder versuchen Sie eine andere Suchanfrage.');
+        } else {
+            setError('Bei der Suche ist ein Fehler aufgetreten. Bitte versuche es später erneut.');
+        }
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
         performanceMonitor.endMeasure('searchPrompts');
       }
-    }, 400), // Geringere Verzögerung für schnellere Reaktion
-    [saveSearchQuery]
+    }, 400),
+    [saveSearchQuery, cache, performanceMonitor] // Added cache and performanceMonitor to dependency array
   );
   
-  // Führe die Suche aus, wenn sich die Suchanfrage ändert
+  // Führe die Suche aus, wenn sich die Suchanfrage oder Sortierung ändert
   useEffect(() => {
-    debouncedSearch(searchQuery);
-  }, [searchQuery, debouncedSearch]);
+    // Nur ausführen, wenn searchQuery nicht leer ist, um unnötige Suchen beim Start zu vermeiden,
+    // es sei denn, eine initiale Query kommt von den Route-Parametern.
+    if (searchQuery.trim() || route.params?.query) {
+        debouncedSearch(searchQuery);
+    } else {
+        setSearchResults([]); // Clear results if search query is cleared and no initial param
+    }
+  }, [searchQuery, debouncedSearch, currentSort, route.params?.query]);
+
+  // Effect to handle incoming query parameter from navigation
+  useEffect(() => {
+    const initialQuery = route.params?.query;
+    if (initialQuery && typeof initialQuery === 'string' && initialQuery !== searchQuery) {
+      setSearchQuery(initialQuery);
+    }
+    // Only re-run if route.params.query changes. Avoid re-running on searchQuery change from this effect.
+  }, [route.params?.query]); 
   
   // Handler für Änderungen der Suchanfrage
   const handleSearchChange = useCallback((text: string) => {
@@ -225,6 +276,32 @@ const SearchScreen: React.FC = () => {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Sorting UI - only shown when there is a search query */}
+        {searchQuery.trim() && (
+          <View style={styles.sortingContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sortingContentContainer}>
+              {SORT_OPTIONS.map(option => (
+                <TouchableOpacity
+                  key={option.label}
+                  style={[
+                    styles.sortChip,
+                    { 
+                      backgroundColor: option.label === currentSort.label ? theme.colors.primary : theme.colors.surface,
+                      borderColor: option.label === currentSort.label ? theme.colors.primary : theme.colors.border,
+                    }
+                  ]}
+                  onPress={() => setCurrentSort(option)}
+                >
+                  <Text style={[
+                    styles.sortChipText,
+                    { color: option.label === currentSort.label ? theme.colors.onPrimary : theme.colors.text }
+                  ]}>{option.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
       </View>
       
       {!searchQuery.trim() ? (
@@ -323,12 +400,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: theme.colors.border, // Use theme color
   },
   searchInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: theme.colors.backgroundVariant, // Use theme color
     borderRadius: 8,
     paddingHorizontal: 10,
   },
@@ -418,6 +495,29 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 16,
   },
+  sortingContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: theme.colors.surface, // Match search container bg
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  sortingContentContainer: {
+    paddingVertical: 4,
+  },
+  sortChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+  },
+  // sortChipActive is now handled inline with conditional styling for simplicity with theme
+  sortChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  // sortChipTextActive is also handled inline
 });
 
 export default React.memo(SearchScreen);
